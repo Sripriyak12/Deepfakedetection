@@ -1,82 +1,101 @@
-from flask import Flask, render_template, request, send_file
-from werkzeug.utils import secure_filename
 import os
+import json
 import cv2
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.applications.xception import preprocess_input
-import json
-import gdown   # ADD THIS
+import gdown
+
+from flask import Flask, render_template, request, send_file
+from werkzeug.utils import secure_filename
+
+# -------------------------------
+# Basic Config
+# -------------------------------
 
 UPLOAD_FOLDER = "Uploaded_Files"
-
-app = Flask("__main__", template_folder="templates")
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 MODEL_PATH = "model/xception_5o.h5"
-
-# ADD THIS SECTION
 MODEL_URL = "https://drive.google.com/uc?id=1rK73CF-BWdvKNPzrj9HpGaXKEIVFpThB"
-
-os.makedirs("model", exist_ok=True)
-
-if not os.path.exists(MODEL_PATH):
-    print("Downloading model...")
-    gdown.download(MODEL_URL, MODEL_PATH, quiet=False, fuzzy = True)
 
 IMG_SIZE = 224
 MAX_FRAMES = 35
 MIN_FACE = 50
 
-print("Loading model...")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs("model", exist_ok=True)
 
-from tensorflow.keras.applications import Xception
-from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
-from tensorflow.keras.models import Model
+app = Flask(__name__, template_folder="templates")
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# rebuild architecture
-base_model = Xception(weights=None, include_top=False, input_shape=(224,224,3))
+# -------------------------------
+# Download Model if Missing
+# -------------------------------
 
-x = base_model.output
-x = GlobalAveragePooling2D()(x)
-x = Dense(1, activation="sigmoid")(x)
+if not os.path.exists(MODEL_PATH):
+    print("Downloading model...")
+    gdown.download(MODEL_URL, MODEL_PATH, quiet=False, fuzzy=True)
 
-model = Model(inputs=base_model.input, outputs=x)
+# -------------------------------
+# Lazy Model Loading
+# -------------------------------
 
-# load trained weights
-model.load_weights(MODEL_PATH)
-
-print("Model loaded")
+model = None
 face_detector = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
+def get_model():
+    global model
+
+    if model is None:
+        print("Loading TensorFlow model...")
+
+        import tensorflow as tf
+        from tensorflow.keras.applications import Xception
+        from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
+        from tensorflow.keras.models import Model
+
+        base_model = Xception(
+            weights=None,
+            include_top=False,
+            input_shape=(224, 224, 3)
+        )
+
+        x = base_model.output
+        x = GlobalAveragePooling2D()(x)
+        x = Dense(1, activation="sigmoid")(x)
+
+        model_local = Model(inputs=base_model.input, outputs=x)
+        model_local.load_weights(MODEL_PATH)
+
+        model = model_local
+
+        print("Model loaded successfully")
+
+    return model
+
+# -------------------------------
+# Video Processing
+# -------------------------------
+
 def extract_frames(video_path):
 
     cap = cv2.VideoCapture(video_path)
-
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     if total == 0:
+        cap.release()
         return []
 
     indices = np.linspace(0, total - 1, MAX_FRAMES).astype(int)
-
     frames = []
 
     for i in indices:
-
         cap.set(cv2.CAP_PROP_POS_FRAMES, i)
-
         ret, frame = cap.read()
 
         if ret:
             frames.append(frame)
 
     cap.release()
-
     return frames
 
 
@@ -94,9 +113,8 @@ def get_face(frame):
     if len(faces) == 0:
         return None
 
-    faces = sorted(faces, key=lambda x: x[2]*x[3], reverse=True)
-
-    x,y,w,h = faces[0]
+    faces = sorted(faces, key=lambda x: x[2] * x[3], reverse=True)
+    x, y, w, h = faces[0]
 
     face = frame[y:y+h, x:x+w]
 
@@ -110,8 +128,11 @@ def get_face(frame):
 
 def predict_video(video_path):
 
-    frames = extract_frames(video_path)
+    model = get_model()
 
+    from tensorflow.keras.applications.xception import preprocess_input
+
+    frames = extract_frames(video_path)
     scores = []
 
     for frame in frames:
@@ -122,7 +143,6 @@ def predict_video(video_path):
             continue
 
         img = preprocess_input(face)
-
         img = np.expand_dims(img, axis=0)
 
         pred = model(img, training=False).numpy()[0][0]
@@ -135,7 +155,6 @@ def predict_video(video_path):
     scores = np.array(scores)
 
     median_score = np.median(scores)
-
     top_fake = np.mean(np.sort(scores)[-3:])
 
     final_score = 0.7 * median_score + 0.3 * top_fake
@@ -144,53 +163,44 @@ def predict_video(video_path):
 
     return label, float(final_score)
 
+# -------------------------------
+# Routes
+# -------------------------------
 
 @app.route("/", methods=["GET"])
 def homepage():
     return render_template("index.html")
 
 
-@app.route("/Detect", methods=["GET", "POST"])
-def DetectPage():
-
-    if request.method == "GET":
-        return render_template("index.html")
+@app.route("/Detect", methods=["POST"])
+def detect_page():
 
     video = request.files.get("video")
 
     if video is None or video.filename == "":
         data = json.dumps({"error": "No file uploaded"})
         return render_template("index.html", data=data)
+
     filename = secure_filename(video.filename)
 
-    allowed_ext = (".mp4",".avi",".mov",".mkv")
+    allowed_ext = (".mp4", ".avi", ".mov", ".mkv")
 
     if not filename.lower().endswith(allowed_ext):
         data = json.dumps({"error": "Unsupported file format"})
         return render_template("index.html", data=data)
 
     save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-
     video.save(save_path)
 
     try:
-
         label, _ = predict_video(save_path)
-
-        payload = {
-            "output": label
-        }
+        payload = {"output": label}
 
     except Exception as e:
-
         print("Detection error:", e)
-
-        payload = {
-            "error": "Video processing failed"
-        }
+        payload = {"error": "Video processing failed"}
 
     finally:
-
         try:
             os.remove(save_path)
         except:
@@ -200,18 +210,24 @@ def DetectPage():
 
     return render_template("index.html", data=data)
 
+# -------------------------------
+# Static Fixes
+# -------------------------------
 
 @app.route('/static/react/media/bgimage.14b90305.jpg')
 def legacy_bgimage():
-    return send_file(os.path.join('static','react','media','bgimage.jpeg'))
+    return send_file(os.path.join('static', 'react', 'media', 'bgimage.jpeg'))
 
 
 @app.route('/static/react/logo192.png')
 def legacy_logo():
-    return send_file(os.path.join('static','react','media','bgimage.jpeg'))
+    return send_file(os.path.join('static', 'react', 'media', 'bgimage.jpeg'))
 
+# -------------------------------
+# Start Server
+# -------------------------------
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     print("Starting Flask server on port", port)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
