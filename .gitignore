@@ -1,0 +1,5 @@
+model/*.h5
+Uploaded_Files/*
+__pycache__/
+*.pyc
+.env
