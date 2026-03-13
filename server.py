@@ -19,13 +19,13 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 MODEL_PATH = "model/xception_5o.h5"
 
 # ADD THIS SECTION
-MODEL_URL = "https://drive.google.com/file/d/1rK73CF-BWdvKNPzrj9HpGaXKEIVFpThB"
+MODEL_URL = "https://drive.google.com/uc?id=1rK73CF-BWdvKNPzrj9HpGaXKEIVFpThB"
 
 os.makedirs("model", exist_ok=True)
 
 if not os.path.exists(MODEL_PATH):
     print("Downloading model...")
-    gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+    gdown.download(MODEL_URL, MODEL_PATH, quiet=False, fuzzy = True)
 
 IMG_SIZE = 224
 MAX_FRAMES = 35
@@ -198,4 +198,5 @@ def legacy_logo():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
