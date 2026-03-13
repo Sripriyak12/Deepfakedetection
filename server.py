@@ -4,7 +4,6 @@ import os
 import cv2
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import load_model
 from tensorflow.keras.applications.xception import preprocess_input
 import json
 import gdown   # ADD THIS
@@ -32,9 +31,24 @@ MAX_FRAMES = 35
 MIN_FACE = 50
 
 print("Loading model...")
-model = load_model(MODEL_PATH, compile=False)
-print("Model loaded")
 
+from tensorflow.keras.applications import Xception
+from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
+from tensorflow.keras.models import Model
+
+# rebuild architecture
+base_model = Xception(weights=None, include_top=False, input_shape=(224,224,3))
+
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(1, activation="sigmoid")(x)
+
+model = Model(inputs=base_model.input, outputs=x)
+
+# load trained weights
+model.load_weights(MODEL_PATH)
+
+print("Model loaded")
 face_detector = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
