@@ -14,10 +14,12 @@ UPLOAD_FOLDER = "Uploaded_Files"
 app = Flask("__main__", template_folder="templates")
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 MODEL_PATH = "model/xception_5o.h5"
 
 # ADD THIS SECTION
-MODEL_URL = "https://drive.google.com/file/d/1rK73CF-BWdvKNPzrj9HpGaXKEIVFpThB/view?usp=sharing"
+MODEL_URL = "https://drive.google.com/file/d/1rK73CF-BWdvKNPzrj9HpGaXKEIVFpThB"
 
 os.makedirs("model", exist_ok=True)
 
