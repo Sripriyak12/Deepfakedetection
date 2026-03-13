@@ -222,3 +222,8 @@ def legacy_bgimage():
 @app.route('/static/react/logo192.png')
 def legacy_logo():
     return send_file(os.path.join('static', 'react', 'media', 'bgimage.jpeg'))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    print("Starting Flask server on port", port)
+    app.run(host="0.0.0.0", port=port)
